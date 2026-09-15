@@ -417,6 +417,11 @@ class ImageInstanceOps:
                     "Template Alignment Adjustment", final_align, 0, 0, config=config
                 )
 
+            if config.watermark.enabled:
+                final_marked = ImageUtils.apply_watermark(
+                    final_marked, config.watermark
+                )
+
             if config.outputs.save_detections and save_dir is not None:
                 if multi_roll:
                     save_dir = save_dir.joinpath("_MULTI_")

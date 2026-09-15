@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
+from src.utils.image import ImageUtils
 from src.tests.test_samples.sample2.boilerplate import (
     CONFIG_BOILERPLATE,
     TEMPLATE_BOILERPLATE,
@@ -100,3 +102,47 @@ def test_different_bubble_dimensions(mocker):
         output_data[unequal_columns].iloc[0].to_list()
         == original_output_data[unequal_columns].iloc[0].to_list()
     )
+
+
+def test_watermark_disabled():
+    blank = np.ones((400, 400, 3), dtype=np.uint8) * 255
+    res = ImageUtils.apply_watermark(blank, {"enabled": False})
+    assert np.array_equal(blank, res)
+
+
+def test_watermark_grayscale_shape():
+    gray = np.ones((500, 400), dtype=np.uint8) * 200
+    res = ImageUtils.apply_watermark(gray, {"enabled": True, "text": "TEST"})
+    assert res.shape == (500, 400)
+    assert len(res.shape) == 2
+
+
+def test_watermark_positions():
+    shape = (600, 500)
+    text_size = (150, 25)
+    positions = ["bottom-right", "top-left", "top-right", "bottom-left", "center"]
+    for pos in positions:
+        x, y = ImageUtils.calculate_position(shape, text_size, position=pos, margin=20)
+        assert 0 <= x < shape[1], f"X out of bounds for {pos}: {x}"
+        assert 0 <= y < shape[0], f"Y out of bounds for {pos}: {y}"
+
+
+def test_watermark_autoscaling():
+    img = np.ones((300, 200, 3), dtype=np.uint8) * 255
+    long_text = "VERY LONG WATERMARK TEXT THAT EXCEEDS IMAGE WIDTH SIGNIFICANTLY"
+    res = ImageUtils.apply_watermark(img, {"enabled": True, "text": long_text, "font_scale": 2.0})
+    assert res.shape == img.shape
+
+
+def test_watermark_pipeline_integration(mocker):
+    def modify_config(config):
+        config["watermark"] = {
+            "enabled": True,
+            "text": "Processed using OMRChecker",
+            "position": "bottom-right",
+            "margin": 20,
+            "opacity": 0.5,
+        }
+
+    exception = write_jsons_and_run(mocker, modify_config=modify_config)
+    assert str(exception) == "No Error"
