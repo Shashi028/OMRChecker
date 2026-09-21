@@ -120,18 +120,41 @@ def test_watermark_grayscale_shape():
 def test_watermark_positions():
     shape = (600, 500)
     text_size = (150, 25)
+    baseline = 5
+    margin = 20
     positions = ["bottom-right", "top-left", "top-right", "bottom-left", "center"]
     for pos in positions:
-        x, y = ImageUtils.calculate_position(shape, text_size, position=pos, margin=20)
-        assert 0 <= x < shape[1], f"X out of bounds for {pos}: {x}"
-        assert 0 <= y < shape[0], f"Y out of bounds for {pos}: {y}"
+        x, y = ImageUtils.calculate_position(shape, text_size, position=pos, margin=margin, baseline=baseline)
+        assert margin <= x <= shape[1] - margin - text_size[0], f"X bounding box out of bounds for {pos}: {x}"
+        assert margin + text_size[1] <= y <= shape[0] - margin - baseline, f"Y bounding box out of bounds for {pos}: {y}"
 
 
 def test_watermark_autoscaling():
-    img = np.ones((300, 200, 3), dtype=np.uint8) * 255
+    # Use a black image so that the watermark (color: green default) will change pixel values.
+    img = np.zeros((300, 200, 3), dtype=np.uint8)
     long_text = "VERY LONG WATERMARK TEXT THAT EXCEEDS IMAGE WIDTH SIGNIFICANTLY"
-    res = ImageUtils.apply_watermark(img, {"enabled": True, "text": long_text, "font_scale": 2.0})
+    margin = 20
+    res = ImageUtils.apply_watermark(
+        img,
+        {
+            "enabled": True,
+            "text": long_text,
+            "font_scale": 2.0,
+            "margin": margin,
+            "opacity": 1.0,
+            "color": (0, 255, 0),
+        },
+    )
     assert res.shape == img.shape
+
+    # Check that pixels outside the margin are still 0
+    assert np.all(res[:margin, :, :] == 0), "Text bled into top margin"
+    assert np.all(res[-margin:, :, :] == 0), "Text bled into bottom margin"
+    assert np.all(res[:, :margin, :] == 0), "Text bled into left margin"
+    assert np.all(res[:, -margin:, :] == 0), "Text bled into right margin"
+
+    # Check that some pixels inside the margin changed (meaning text was actually drawn)
+    assert np.any(res[margin:-margin, margin:-margin, :] > 0), "Text was not drawn inside bounds"
 
 
 def test_watermark_pipeline_integration(mocker):

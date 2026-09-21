@@ -25,13 +25,13 @@ class ImageUtils:
         cv2.imwrite(path, final_marked)
 
     @staticmethod
-    def calculate_position(image_shape, text_size, position="bottom-right", margin=20):
+    def calculate_position(image_shape, text_size, position="bottom-right", margin=20, baseline=0):
         h, w = image_shape[:2]
         tw, th = text_size
 
         if position == "bottom-right":
             x = w - tw - margin
-            y = h - margin
+            y = h - margin - baseline
         elif position == "top-left":
             x = margin
             y = th + margin
@@ -40,16 +40,22 @@ class ImageUtils:
             y = th + margin
         elif position == "bottom-left":
             x = margin
-            y = h - margin
+            y = h - margin - baseline
         elif position == "center":
             x = (w - tw) // 2
             y = (h + th) // 2
         else:
             x = w - tw - margin
-            y = h - margin
+            y = h - margin - baseline
 
-        x = max(0, min(x, w - 1))
-        y = max(0, min(y, h - 1))
+        # Clamp bounding box strictly inside margins if possible
+        x = max(margin, min(x, w - margin - tw))
+        y = max(margin + th, min(y, h - margin - baseline))
+
+        # Absolute fallback to ensure we don't draw out of image bounds
+        x = max(0, min(x, max(0, w - tw)))
+        y = max(th, min(y, max(0, h - baseline)))
+
         return int(x), int(y)
 
     @staticmethod
@@ -76,28 +82,43 @@ class ImageUtils:
         font = cv2.FONT_HERSHEY_SIMPLEX
         thickness = max(1, int(round(font_scale * 2)))
 
-        max_allowed_width = max(50, w - (2 * margin))
-        current_font_scale = font_scale
-        (tw, th), _ = cv2.getTextSize(text, font, current_font_scale, thickness)
+        # Ensure margins do not exceed half the image dimensions
+        margin_x = min(margin, max(0, (w - 1) // 2))
+        margin_y = min(margin, max(0, (h - 1) // 2))
+        drawable_w = w - 2 * margin_x
+        drawable_h = h - 2 * margin_y
 
-        while tw > max_allowed_width and current_font_scale > 0.25:
+        current_font_scale = font_scale
+        (tw, th), baseline = cv2.getTextSize(text, font, current_font_scale, thickness)
+
+        while (tw > drawable_w or (th + baseline) > drawable_h) and current_font_scale > 0.25:
             current_font_scale *= 0.9
             thickness = max(1, int(round(current_font_scale * 2)))
-            (tw, th), _ = cv2.getTextSize(text, font, current_font_scale, thickness)
+            (tw, th), baseline = cv2.getTextSize(text, font, current_font_scale, thickness)
 
-        x, y = ImageUtils.calculate_position((h, w), (tw, th), position=position, margin=margin)
+        if tw > drawable_w:
+            while len(text) > 0:
+                text = text[:-4] + "..." if len(text) > 3 else text[:-1]
+                (tw, th), baseline = cv2.getTextSize(text, font, current_font_scale, thickness)
+                if tw <= drawable_w:
+                    break
+
+        x, y = ImageUtils.calculate_position(
+            (h, w), (tw, th), position=position, margin=margin, baseline=baseline
+        )
 
         overlay = img_bgr.copy()
-        cv2.putText(
-            overlay,
-            text,
-            (x, y),
-            font,
-            current_font_scale,
-            color,
-            thickness,
-            lineType=cv2.LINE_AA,
-        )
+        if len(text) > 0:
+            cv2.putText(
+                overlay,
+                text,
+                (x, y),
+                font,
+                current_font_scale,
+                color,
+                thickness,
+                lineType=cv2.LINE_AA,
+            )
 
         blended = cv2.addWeighted(img_bgr, 1.0 - opacity, overlay, opacity, 0)
 
